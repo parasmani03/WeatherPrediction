@@ -47,12 +47,15 @@ const API_KEY = 'd6cf26b7b57630e688f6ac95bad80329'
 const WEATHER_API = 'https://api.openweathermap.org/data/2.5'
 const GEO_API = 'https://api.openweathermap.org/geo/1.0'
 
-// Function to convert country code to full country name
+// Function to normalize country value to a two-letter uppercase country code (e.g., 'IN')
 function getCountryName(countryCode) {
+    if (!countryCode) return '';
     try {
-        return new Intl.DisplayNames(['en'], { type: 'region' }).of(countryCode) || countryCode;
+        // Ensure we return a 2-letter uppercase code. Many APIs already return this.
+        const code = String(countryCode).trim().toUpperCase();
+        return code.slice(0, 2);
     } catch (e) {
-        // Fallback for older browsers
+        // Fallback: return original (best-effort)
         return countryCode;
     }
 }
