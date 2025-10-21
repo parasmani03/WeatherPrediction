@@ -15,15 +15,12 @@ const forecastsVerticalContainer = document.querySelector(".forecasts-vertical-c
 const popupOverlay = document.getElementById('popupOverlay');
 const suggestionsContainer = document.getElementById('suggestionsContainer');
 const locateBtn = document.querySelector('.locate-btn');
-const themeToggleBtn = document.querySelector('.theme-toggle-btn');
 const uvIndexValueTxt = document.querySelector('.uv-index-value-txt');
 const feelsLikeValueTxt = document.querySelector('.feels-like-value-txt');
 const sunriseTimeTxt = document.querySelector('.sunrise-time-txt');
 const sunsetTimeTxt = document.querySelector('.sunset-time-txt');
 const weatherAlertsBanner = document.getElementById('weatherAlertsBanner');
 const loadingScreen = document.getElementById('loadingScreen');
-
-// Favorites functionality
 const favoriteBtn = document.getElementById('favoriteBtn');
 const favoritesSection = document.getElementById('favoritesSection');
 const favoritesList = document.getElementById('favoritesList');
@@ -57,6 +54,17 @@ function getCountryName(countryCode) {
     } catch (e) {
         // Fallback for older browsers
         return countryCode;
+    }
+}
+
+// Function to format location display with state information
+function formatLocationDisplay(city, state, country) {
+    const countryName = getCountryName(country);
+    
+    if (state && state.trim() !== '') {
+        return `${city}, ${state}, ${countryName}`;
+    } else {
+        return `${city}, ${countryName}`;
     }
 }
 
@@ -148,6 +156,17 @@ async function getForecastByCoords(lat, lon) {
     }
 }
 
+// Fetch daily UV index for a given date and coords using Open-Meteo
+async function fetchUVIndex(lat, lon, dateStr) {
+    // Open-Meteo includes daily UV index
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}&daily=uv_index_max&timezone=auto&start_date=${encodeURIComponent(dateStr)}&end_date=${encodeURIComponent(dateStr)}`
+    const res = await fetch(url)
+    if (!res.ok) throw new Error('UV API error')
+    const data = await res.json()
+    if (!data || !data.daily || !data.daily.uv_index_max || data.daily.uv_index_max.length === 0) throw new Error('UV data missing')
+    return data.daily.uv_index_max[0]
+}
+
 // Reverse geocoding: coords -> city name
 async function reverseGeocode(lat, lon) {
     try {
@@ -168,6 +187,41 @@ async function reverseGeocode(lat, lon) {
     } catch (error) {
         console.error('Reverse geocoding error:', error)
         return `${lat},${lon}`
+    }
+}
+
+// Enhanced reverse geocoding: coords -> detailed location info (city, state, country)
+async function getDetailedLocationInfo(lat, lon) {
+    try {
+        const url = `${GEO_API}/reverse?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&limit=1&appid=${API_KEY}`
+        const response = await fetch(url)
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`)
+        }
+        
+        const data = await response.json()
+        
+        if (Array.isArray(data) && data.length > 0) {
+            const place = data[0]
+            return {
+                city: place.name || 'Unknown City',
+                state: place.state || place.region || '',
+                country: place.country || 'Unknown Country'
+            }
+        }
+        return {
+            city: 'Unknown City',
+            state: '',
+            country: 'Unknown Country'
+        }
+    } catch (error) {
+        console.error('Detailed location info error:', error)
+        return {
+            city: 'Unknown City',
+            state: '',
+            country: 'Unknown Country'
+        }
     }
 }
 
@@ -359,6 +413,24 @@ function getUVIndexDescription(uvIndex) {
     return 'Extreme';
 }
 
+// Update UV index label for selected date
+async function updateUVForDate(forecastData, dateStr) {
+    try {
+        if (!forecastData || !forecastData.city || !forecastData.city.coord) {
+            if (uvIndexValueTxt) uvIndexValueTxt.textContent = 'N/A'
+            return
+        }
+        const lat = forecastData.city.coord.lat
+        const lon = forecastData.city.coord.lon
+        const uv = await fetchUVIndex(lat, lon, dateStr)
+        if (uvIndexValueTxt) {
+            uvIndexValueTxt.textContent = `${Math.round(uv)} (${getUVIndexDescription(uv)})`
+        }
+    } catch (e) {
+        if (uvIndexValueTxt) uvIndexValueTxt.textContent = 'N/A'
+    }
+}
+
 // Function to hide loading screen
 function hideLoadingScreen() {
     if (loadingScreen) {
@@ -470,8 +542,13 @@ async function updateWeatherInfo(city) {
         const sunrise = currentWeatherData.sys.sunrise;
         const sunset = currentWeatherData.sys.sunset;
         
+        // Get detailed location information including state
+        const lat = currentWeatherData.coord.lat;
+        const lon = currentWeatherData.coord.lon;
+        const locationInfo = await getDetailedLocationInfo(lat, lon);
+        
         // Update UI elements
-        countryTxt.textContent = `${name}, ${getCountryName(country)}`;
+        countryTxt.textContent = formatLocationDisplay(locationInfo.city, locationInfo.state, locationInfo.country);
         tempTxt.textContent = Math.round(temp) + '°C';
         conditionTxt.textContent = conditionText.charAt(0).toUpperCase() + conditionText.slice(1);
         humidityValueTxt.textContent = humidity + '%';
@@ -515,6 +592,8 @@ async function updateWeatherInfo(city) {
         
         // Get and update the forecast section using 5-day forecast API
         const forecastData = await getForecastData(city);
+        // store globally for later UV updates on hour clicks
+        window.__lastForecastData = forecastData;
         updateForecastsInfo(forecastData);
         updateVerticalForecastInfo(forecastData);
         if (weatherInfoSection) {
@@ -710,12 +789,16 @@ async function updateMainWeatherDisplay(forecastData, selectedDate) {
     const avgWindSpeed = selectedDateForecasts.reduce((sum, item) => sum + item.wind.speed, 0) / selectedDateForecasts.length;
     const avgPressure = selectedDateForecasts.reduce((sum, item) => sum + item.main.pressure, 0) / selectedDateForecasts.length;
     const avgVisibility = selectedDateForecasts.reduce((sum, item) => sum + item.visibility, 0) / selectedDateForecasts.length;
+    const avgFeelsLike = selectedDateForecasts.reduce((sum, item) => sum + (item.main.feels_like || item.main.temp), 0) / selectedDateForecasts.length;
     
     // Update main weather display elements
     tempTxt.textContent = Math.round(avgTemp) + '°C';
     conditionTxt.textContent = mainCondition.charAt(0).toUpperCase() + mainCondition.slice(1);
     humidityValueTxt.textContent = Math.round(avgHumidity) + '%';
     windSpeedValueTxt.textContent = Math.round(avgWindSpeed) + ' m/s';
+    if (feelsLikeValueTxt) {
+        feelsLikeValueTxt.textContent = Math.round(avgFeelsLike) + '°C';
+    }
     
     // Update pressure and visibility if their elements exist
     const pressureValueTxt = document.querySelector('.pressure-value-txt');
@@ -727,6 +810,10 @@ async function updateMainWeatherDisplay(forecastData, selectedDate) {
     if (visibilityValueTxt) {
         visibilityValueTxt.textContent = (avgVisibility / 1000).toFixed(1) + ' km';
     }
+
+    // Fetch UV index and sunrise/sunset for the selected date using city coordinates
+    updateUVForDate(forecastData, selectedDate);
+    updateSunTimesForDate(forecastData, selectedDate);
     
     // Update weather icon
     weatherSummaryImg.src = `assets/weather/${getWeatherIcon(mainCondition)}`;
@@ -744,7 +831,7 @@ async function updateMainWeatherDisplay(forecastData, selectedDate) {
 }
 
 // Function to update main weather display for specific hour
-function updateMainWeatherDisplayForHour(time, temp, condition, targetDate) {
+function updateMainWeatherDisplayForHour(time, temp, condition, targetDate, metrics) {
     // Update temperature
     tempTxt.textContent = temp + '°C';
     
@@ -759,6 +846,38 @@ function updateMainWeatherDisplayForHour(time, temp, condition, targetDate) {
     const options = { day: 'numeric', month: 'long', weekday: 'long' };
     const formattedDate = dateObj.toLocaleDateString('en-US', options);
     currentDateTxt.textContent = `${formattedDate} at ${time}`;
+
+    // Update right-side metrics if provided
+    if (metrics) {
+        if (typeof metrics.humidity === 'number') {
+            humidityValueTxt.textContent = Math.round(metrics.humidity) + '%';
+        }
+        if (typeof metrics.wind === 'number') {
+            windSpeedValueTxt.textContent = Math.round(metrics.wind) + ' m/s';
+        }
+        if (feelsLikeValueTxt && typeof metrics.feelsLike === 'number') {
+            feelsLikeValueTxt.textContent = Math.round(metrics.feelsLike) + '°C';
+        }
+        const pressureValueTxt = document.querySelector('.pressure-value-txt');
+        if (pressureValueTxt && typeof metrics.pressure === 'number') {
+            pressureValueTxt.textContent = Math.round(metrics.pressure) + ' hPa';
+        }
+        const visibilityValueTxt = document.querySelector('.visibility-value-txt');
+        if (visibilityValueTxt && typeof metrics.visibility === 'number') {
+            visibilityValueTxt.textContent = (metrics.visibility / 1000).toFixed(1) + ' km';
+        }
+        // Fetch UV index for the selected hour's date
+        if (uvIndexValueTxt) {
+            // Use day-level UV for the date
+            requestAnimationFrame(() => {
+                // We don't have forecastData here; rely on last used forecast stored globally if available
+                if (window.__lastForecastData) {
+                    updateUVForDate(window.__lastForecastData, targetDate);
+                }
+            });
+        }
+        // Sunrise/sunset are updated during day selection via updateMainWeatherDisplay
+    }
     
     // Apply animations after updating the display
     setTimeout(() => {
@@ -769,7 +888,9 @@ function updateMainWeatherDisplayForHour(time, temp, condition, targetDate) {
 
 // Function to restore original weather data when deselecting
 function restoreOriginalWeatherData() {
-    const currentCity = countryTxt.textContent.split(',')[0];
+    const currentLocation = countryTxt.textContent;
+    // Extract just the city name (first part before comma)
+    const currentCity = currentLocation.split(',')[0];
     if (currentCity) {
         updateWeatherInfo(currentCity);
     } else {
@@ -777,6 +898,26 @@ function restoreOriginalWeatherData() {
         setTimeout(() => {
             applyWeatherAnimations();
         }, 100);
+    }
+}
+
+// Helper function to convert 24-hour format to 12-hour format
+function formatHourTo12Hour(hour24) {
+    if (hour24 === 0) return '12 am';
+    if (hour24 < 12) return hour24 + ' am';
+    if (hour24 === 12) return '12 pm';
+    return (hour24 - 12) + ' pm';
+}
+
+// Helper function to convert 12-hour format to 24-hour format
+function parse12HourTo24Hour(time12) {
+    const time = time12.toLowerCase().replace(/\s/g, ''); // Remove spaces
+    const hour = parseInt(time.replace(/[amp]/g, ''));
+    
+    if (time.includes('am')) {
+        return hour === 12 ? 0 : hour;
+    } else { // pm
+        return hour === 12 ? 12 : hour + 12;
     }
 }
 
@@ -797,8 +938,18 @@ async function updateVerticalForecastInfo(forecastData, selectedDate) {
         return forecastDate === targetDate;
     });
 
-    // Define time slots for hourly display
-    const timeSlots = ['3am', '6am', '9am', '12pm', '3pm', '6pm', '9pm', '12am'];
+    // Get current time and create dynamic time slots for next 8 hours
+    const now = new Date();
+    const currentHour = now.getHours();
+    const timeSlots = [];
+    
+    // Generate next 8 hours starting from current hour + 1
+    for (let i = 1; i <= 8; i++) {
+        const nextHour = (currentHour + i) % 24;
+        const timeSlot = formatHourTo12Hour(nextHour);
+        timeSlots.push(timeSlot);
+    }
+    
     const hourlyForecasts = [];
 
     // Map API data to our time slots
@@ -811,11 +962,8 @@ async function updateVerticalForecastInfo(forecastData, selectedDate) {
             const forecastTime = new Date(forecast.dt * 1000);
             const forecastHour = forecastTime.getHours();
             
-            // Map time slots to hours
-            const timeSlotHour = {
-                '3am': 3, '6am': 6, '9am': 9, '12pm': 12, 
-                '3pm': 15, '6pm': 18, '9pm': 21
-            }[timeSlot];
+            // Convert time slot back to 24-hour format for comparison
+            const timeSlotHour = parse12HourTo24Hour(timeSlot);
 
             const timeDiff = Math.abs(forecastHour - timeSlotHour);
             
@@ -830,7 +978,11 @@ async function updateVerticalForecastInfo(forecastData, selectedDate) {
                 time: timeSlot,
                 temp: Math.round(closestForecast.main.temp),
                 condition: closestForecast.weather[0].description,
-                precipitationProb: Math.round((closestForecast.pop || 0) * 100) // Convert to percentage
+                feelsLike: closestForecast.main.feels_like,
+                humidity: closestForecast.main.humidity,
+                wind: closestForecast.wind.speed,
+                pressure: closestForecast.main.pressure,
+                visibility: closestForecast.visibility
             });
         } else {
             // Fallback with random data if no matching forecast found
@@ -839,34 +991,27 @@ async function updateVerticalForecastInfo(forecastData, selectedDate) {
             const currentTemp = Math.round(baseTemp + tempVariation);
             const conditionVariations = ['clear', 'clouds', 'rain', 'drizzle', 'thunderstorm'];
             const randomCondition = conditionVariations[Math.floor(Math.random() * conditionVariations.length)];
-            const randomPrecipProb = Math.floor(Math.random() * 100);
             
             hourlyForecasts.push({
                 time: timeSlot,
                 temp: currentTemp,
                 condition: randomCondition,
-                precipitationProb: randomPrecipProb
+                feelsLike: currentTemp,
+                humidity: Math.round(60 + Math.random() * 20),
+                wind: Math.round(2 + Math.random() * 5),
+                pressure: Math.round(1000 + Math.random() * 20),
+                visibility: 10000
             });
         }
     });
 
     // Display all 8 hourly forecasts
     hourlyForecasts.forEach((item, index) => {
-        // For the second 12pm, add a slight variation to distinguish it
-        let displayTime = item.time;
-        let displayTemp = item.temp;
-        
-        if (item.time === '12pm' && index === 7) {
-            displayTime = '12am';
-            displayTemp = item.temp + 2; // Add 2 degrees to distinguish second 12pm
-        }
-        
         const forecastItem = `
-            <div class="forecast-vertical-item hourly-forecast" title="Hourly forecast for ${targetDate}" data-time="${displayTime}" data-temp="${displayTemp}" data-condition="${item.condition}">
-                <h5 class="forecast-item-date regular-txt">${displayTime}</h5>
+            <div class="forecast-vertical-item hourly-forecast" title="Hourly forecast for ${targetDate}" data-time="${item.time}" data-temp="${item.temp}" data-condition="${item.condition}" data-humidity="${item.humidity}" data-wind="${item.wind}" data-pressure="${item.pressure}" data-visibility="${item.visibility}" data-feelslike="${item.feelsLike}">
+                <h5 class="forecast-item-date regular-txt">${item.time}</h5>
                 <img src="assets/weather/${getWeatherIcon(item.condition)}" class="forecast-item-img">
-                <h5 class="forecast-item-temp">${displayTemp}°C</h5>
-                <h6 class="precipitation-prob">${item.precipitationProb}%</h6>
+                <h5 class="forecast-item-temp">${item.temp}°C</h5>
             </div>
         `;
         
@@ -891,9 +1036,16 @@ async function updateVerticalForecastInfo(forecastData, selectedDate) {
                 const time = item.getAttribute('data-time');
                 const temp = item.getAttribute('data-temp');
                 const condition = item.getAttribute('data-condition');
+                const metrics = {
+                    humidity: parseFloat(item.getAttribute('data-humidity')),
+                    wind: parseFloat(item.getAttribute('data-wind')),
+                    pressure: parseFloat(item.getAttribute('data-pressure')),
+                    visibility: parseFloat(item.getAttribute('data-visibility')),
+                    feelsLike: parseFloat(item.getAttribute('data-feelslike')) || parseFloat(item.getAttribute('data-temp'))
+                };
                 
                 // Update the main weather display for this specific hour
-                updateMainWeatherDisplayForHour(time, temp, condition, targetDate);
+                updateMainWeatherDisplayForHour(time, temp, condition, targetDate, metrics);
             } else {
                 // If it was already selected, deselect it and restore original weather data
                 restoreOriginalWeatherData();
@@ -903,6 +1055,36 @@ async function updateVerticalForecastInfo(forecastData, selectedDate) {
 
     // Draw temperature graph
     drawTemperatureGraph(hourlyForecasts, targetDate);
+}
+
+// Fetch and update sunrise/sunset times for a specific date using forecast city coordinates
+async function updateSunTimesForDate(forecastData, dateStr) {
+    try {
+        if (!forecastData || !forecastData.city || !forecastData.city.coord) {
+            if (sunriseTimeTxt) sunriseTimeTxt.textContent = '—';
+            if (sunsetTimeTxt) sunsetTimeTxt.textContent = '—';
+            return;
+        }
+        const lat = forecastData.city.coord.lat;
+        const lon = forecastData.city.coord.lon;
+        const url = `https://api.sunrise-sunset.org/json?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lon)}&date=${encodeURIComponent(dateStr)}&formatted=0`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('Sun API error');
+        const data = await res.json();
+        if (data.status !== 'OK') throw new Error('Sun API bad status');
+
+        const sunriseISO = data.results.sunrise;
+        const sunsetISO = data.results.sunset;
+
+        const sunriseLocal = new Date(sunriseISO).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+        const sunsetLocal = new Date(sunsetISO).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+
+        if (sunriseTimeTxt) sunriseTimeTxt.textContent = sunriseLocal;
+        if (sunsetTimeTxt) sunsetTimeTxt.textContent = sunsetLocal;
+    } catch (e) {
+        if (sunriseTimeTxt) sunriseTimeTxt.textContent = '—';
+        if (sunsetTimeTxt) sunsetTimeTxt.textContent = '—';
+    }
 }
 
 // Function to draw temperature graph
@@ -933,15 +1115,13 @@ function drawTemperatureGraph(hourlyForecasts, date) {
     const barWidth = graphWidth / temperatures.length * 0.6;
     const barSpacing = graphWidth / temperatures.length;
 
-    // Check if we're in dark mode
-    const isDarkMode = document.documentElement.getAttribute('data-theme') === 'dark';
 
     // Draw background
-    ctx.fillStyle = isDarkMode ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.02)';
     ctx.fillRect(padding, padding, graphWidth, graphHeight);
 
-    // Draw grid lines with appropriate colors for light/dark mode
-    ctx.strokeStyle = isDarkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)';
+    // Draw grid lines
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.08)';
     ctx.lineWidth = 1;
     
     // Horizontal grid lines
@@ -954,7 +1134,7 @@ function drawTemperatureGraph(hourlyForecasts, date) {
         
         // Draw temperature labels on the left
         const tempValue = maxTemp - (i * tempRange / 5);
-        ctx.fillStyle = isDarkMode ? 'rgba(255, 255, 255, 0.6)' : 'rgba(0, 0, 0, 0.5)';
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
         ctx.font = '10px Poppins';
         ctx.textAlign = 'right';
         ctx.fillText(`${Math.round(tempValue)}°`, padding - 8, y + 3);
@@ -993,18 +1173,18 @@ function drawTemperatureGraph(hourlyForecasts, date) {
         ctx.fillRect(x, y, barWidth, barHeight);
         
         // Draw bar border
-        ctx.strokeStyle = isDarkMode ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.1)';
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
         ctx.lineWidth = 1;
         ctx.strokeRect(x, y, barWidth, barHeight);
         
         // Draw temperature value above the bar
-        ctx.fillStyle = isDarkMode ? 'white' : '#333333';
+        ctx.fillStyle = '#333333';
         ctx.font = 'bold 11px Poppins';
         ctx.textAlign = 'center';
         ctx.fillText(`${temp}°`, x + barWidth/2, y - 8);
         
         // Draw time labels below the bars
-        ctx.fillStyle = isDarkMode ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.6)';
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
         ctx.font = '10px Poppins';
         ctx.fillText(times[index], x + barWidth/2, height - padding + 15);
     });
@@ -1013,7 +1193,7 @@ function drawTemperatureGraph(hourlyForecasts, date) {
     const avgTemp = temperatures.reduce((sum, temp) => sum + temp, 0) / temperatures.length;
     const avgY = padding + graphHeight - ((avgTemp - minTemp) / tempRange) * graphHeight;
     
-    ctx.strokeStyle = isDarkMode ? 'rgba(255, 255, 255, 0.8)' : 'rgba(0, 0, 0, 0.6)';
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
     ctx.lineWidth = 2;
     ctx.setLineDash([5, 5]);
     ctx.beginPath();
@@ -1023,14 +1203,14 @@ function drawTemperatureGraph(hourlyForecasts, date) {
     ctx.setLineDash([]);
     
     // Draw average temperature label
-    ctx.fillStyle = isDarkMode ? 'rgba(255, 255, 255, 0.8)' : 'rgba(0, 0, 0, 0.6)';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
     ctx.font = 'bold 10px Poppins';
     ctx.textAlign = 'left';
     ctx.fillText(`Avg: ${Math.round(avgTemp)}°C`, width - padding - 60, avgY - 5);
 
     // Draw temperature range indicator
     const rangeY = padding - 20;
-    ctx.fillStyle = isDarkMode ? 'rgba(255, 255, 255, 0.6)' : 'rgba(0, 0, 0, 0.5)';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
     ctx.font = '10px Poppins';
     ctx.textAlign = 'center';
     ctx.fillText(`Range: ${Math.round(minTemp)}°C - ${Math.round(maxTemp)}°C`, width/2, rangeY);
@@ -1078,8 +1258,8 @@ if (locateBtn) {
             try {
                 const { latitude, longitude } = pos.coords
                 
-                // Get city name for display consistency
-                const cityName = await reverseGeocode(latitude, longitude)
+                // Get detailed location information including state
+                const locationInfo = await getDetailedLocationInfo(latitude, longitude)
 
                 // Fetch data by coordinates to be precise
                 const currentWeatherData = await getCurrentWeatherByCoords(latitude, longitude)
@@ -1095,7 +1275,7 @@ if (locateBtn) {
                 }
 
                 // Mirror updateWeatherInfo flow, but with fetched objects
-                const name = currentWeatherData.name || cityName
+                const name = currentWeatherData.name || locationInfo.city
                 const country = currentWeatherData.sys.country
                 const temp = currentWeatherData.main.temp
                 const feelsLike = currentWeatherData.main.feels_like
@@ -1108,7 +1288,7 @@ if (locateBtn) {
                 const sunrise = currentWeatherData.sys.sunrise
                 const sunset = currentWeatherData.sys.sunset
 
-                countryTxt.textContent = `${name}, ${getCountryName(country)}`
+                countryTxt.textContent = formatLocationDisplay(locationInfo.city, locationInfo.state, locationInfo.country)
                 tempTxt.textContent = Math.round(temp) + '°C'
                 conditionTxt.textContent = conditionText.charAt(0).toUpperCase() + conditionText.slice(1)
                 humidityValueTxt.textContent = humidity + '%'
@@ -1182,107 +1362,7 @@ if (locateBtn) {
     })
 }
 
-// Dark Mode Toggle Functionality
-if (themeToggleBtn) {
-    // Check for saved theme preference or default to light mode
-    const currentTheme = localStorage.getItem('theme') || 'light';
-    document.documentElement.setAttribute('data-theme', currentTheme);
-    
-    // Update button icon based on current theme
-    const updateThemeIcon = () => {
-        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-        themeToggleBtn.querySelector('span').textContent = isDark ? 'light_mode' : 'dark_mode';
-    };
-    
-    // Initialize icon
-    updateThemeIcon();
-    
-    themeToggleBtn.addEventListener('click', () => {
-        const currentTheme = document.documentElement.getAttribute('data-theme');
-        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-        
-        // Update theme
-        document.documentElement.setAttribute('data-theme', newTheme);
-        
-        // Save to localStorage
-        localStorage.setItem('theme', newTheme);
-        
-        // Update button icon
-        updateThemeIcon();
-        
-        // Redraw the temperature graph with new theme colors
-        setTimeout(() => {
-            const forecastsVerticalContainer = document.querySelector('.forecasts-vertical-container');
-            if (forecastsVerticalContainer && forecastsVerticalContainer.children.length > 0) {
-                // Get the current hourly forecasts data and redraw
-                const hourlyItems = forecastsVerticalContainer.querySelectorAll('.forecast-vertical-item');
-                if (hourlyItems.length > 0) {
-                    const hourlyForecasts = Array.from(hourlyItems).map(item => ({
-                        time: item.getAttribute('data-time'),
-                        temp: parseInt(item.getAttribute('data-temp')),
-                        condition: item.getAttribute('data-condition')
-                    }));
-                    
-                    // Get the current target date
-                    const activeItem = forecastsVerticalContainer.querySelector('.active-hourly-forecast');
-                    const targetDate = activeItem ? activeItem.getAttribute('title').split('for ')[1] : new Date().toISOString().split('T')[0];
-                    
-                    drawTemperatureGraph(hourlyForecasts, targetDate);
-                }
-            }
-        }, 100); // Small delay to ensure theme is applied
-    });
-}
 
-// Mobile Theme Button Functionality
-const mobileThemeBtn = document.querySelector('.mobile-theme-btn');
-if (mobileThemeBtn) {
-    // Update mobile theme icon based on current theme
-    const updateMobileThemeIcon = () => {
-        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-        mobileThemeBtn.querySelector('span').textContent = isDark ? 'light_mode' : 'dark_mode';
-    };
-    
-    // Initialize mobile icon
-    updateMobileThemeIcon();
-    
-    mobileThemeBtn.addEventListener('click', () => {
-        const currentTheme = document.documentElement.getAttribute('data-theme');
-        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-        
-        // Update theme
-        document.documentElement.setAttribute('data-theme', newTheme);
-        
-        // Save to localStorage
-        localStorage.setItem('theme', newTheme);
-        
-        // Update both desktop and mobile button icons
-        if (themeToggleBtn && themeToggleBtn.querySelector('span')) {
-            themeToggleBtn.querySelector('span').textContent = newTheme === 'dark' ? 'light_mode' : 'dark_mode';
-        }
-        updateMobileThemeIcon();
-        
-        // Redraw the temperature graph with new theme colors
-        setTimeout(() => {
-            const forecastsVerticalContainer = document.querySelector('.forecasts-vertical-container');
-            if (forecastsVerticalContainer && forecastsVerticalContainer.children.length > 0) {
-                const hourlyItems = forecastsVerticalContainer.querySelectorAll('.forecast-vertical-item');
-                if (hourlyItems.length > 0) {
-                    const hourlyForecasts = Array.from(hourlyItems).map(item => ({
-                        time: item.getAttribute('data-time'),
-                        temp: parseInt(item.getAttribute('data-temp')),
-                        condition: item.getAttribute('data-condition')
-                    }));
-                    
-                    const activeItem = forecastsVerticalContainer.querySelector('.active-hourly-forecast');
-                    const targetDate = activeItem ? activeItem.getAttribute('title').split('for ')[1] : new Date().toISOString().split('T')[0];
-                    
-                    drawTemperatureGraph(hourlyForecasts, targetDate);
-                }
-            }
-        }, 100);
-    });
-}
 
 // Favorites Functions
 function initFavorites() {
@@ -1292,23 +1372,40 @@ function initFavorites() {
 }
 
 function updateFavoriteButton() {
-    const currentCity = countryTxt.textContent;
-    const isFavorited = favorites.some(fav => fav.name === currentCity);
+    const currentLocation = countryTxt.textContent;
+    const isFavorited = favorites.some(fav => fav.name === currentLocation);
     
-    if (isFavorited) {
-        favoriteBtn.classList.add('favorited');
-        favoriteBtn.querySelector('span').textContent = 'favorite';
-        favoriteBtn.title = 'Remove from favorites';
-    } else {
-        favoriteBtn.classList.remove('favorited');
-        favoriteBtn.querySelector('span').textContent = 'favorite_border';
-        favoriteBtn.title = 'Add to favorites';
+    // Update desktop favorite button
+    if (favoriteBtn) {
+        if (isFavorited) {
+            favoriteBtn.classList.add('favorited');
+            favoriteBtn.querySelector('span').textContent = 'favorite';
+            favoriteBtn.title = 'Remove from favorites';
+        } else {
+            favoriteBtn.classList.remove('favorited');
+            favoriteBtn.querySelector('span').textContent = 'favorite_border';
+            favoriteBtn.title = 'Add to favorites';
+        }
+    }
+    
+    // Update mobile favorite button
+    const mobileFavoriteBtn = document.getElementById('mobileFavoriteBtn');
+    if (mobileFavoriteBtn) {
+        if (isFavorited) {
+            mobileFavoriteBtn.classList.add('favorited');
+            mobileFavoriteBtn.querySelector('span').textContent = 'favorite';
+            mobileFavoriteBtn.title = 'Remove from favorites';
+        } else {
+            mobileFavoriteBtn.classList.remove('favorited');
+            mobileFavoriteBtn.querySelector('span').textContent = 'favorite_border';
+            mobileFavoriteBtn.title = 'Add to favorites';
+        }
     }
 }
 
 function toggleFavorite() {
-    const currentCity = countryTxt.textContent;
-    const existingIndex = favorites.findIndex(fav => fav.name === currentCity);
+    const currentLocation = countryTxt.textContent;
+    const existingIndex = favorites.findIndex(fav => fav.name === currentLocation);
     
     if (existingIndex > -1) {
         // Remove from favorites
@@ -1317,7 +1414,7 @@ function toggleFavorite() {
     } else {
         // Add to favorites
         const favorite = {
-            name: currentCity,
+            name: currentLocation,
             timestamp: new Date().toISOString()
         };
         favorites.push(favorite);
@@ -1349,8 +1446,10 @@ function renderFavorites() {
         // Add click event to select the city
         favoriteItem.addEventListener('click', (e) => {
             if (!e.target.closest('.remove-btn')) {
-                cityInput.value = favorite.name;
-                searchWeather();
+                // Extract just the city name (first part before comma) for searching
+                const cityName = favorite.name.split(',')[0];
+                cityInput.value = cityName;
+                updateWeatherInfo(cityName);
             }
         });
         
@@ -1418,6 +1517,12 @@ function showNotification(message, type = 'info') {
 // Add event listeners for favorites
 if (favoriteBtn) {
     favoriteBtn.addEventListener('click', toggleFavorite);
+}
+
+// Mobile favorite button functionality
+const mobileFavoriteBtn = document.getElementById('mobileFavoriteBtn');
+if (mobileFavoriteBtn) {
+    mobileFavoriteBtn.addEventListener('click', toggleFavorite);
 }
 
 // Initialize favorites when page loads

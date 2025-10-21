@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-
+    
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -41,18 +41,12 @@
         
         <!-- Mobile Header Container -->
         <div class="mobile-header-container">
-            <button class="mobile-theme-btn" title="Toggle Dark Mode" aria-label="Toggle Dark Mode">
-                <span class="material-symbols-outlined">dark_mode</span>
-            </button>
             <div class="mobile-time">
                 <span id="mobileTime">--:--</span>
             </div>
         </div>
         
         <header class="input-container">
-            <button class="theme-toggle-btn" title="Toggle Dark Mode" aria-label="Toggle Dark Mode">
-                <span class="material-symbols-outlined">dark_mode</span>
-            </button>
             <input class="city-input" placeholder="Search City" type="text">
             <button class="search-btn">
                 <span class="material-symbols-outlined">
@@ -63,7 +57,7 @@
                 <span class="material-symbols-outlined">my_location</span>
             </button>
             <!-- Mobile favorite button - only visible on mobile -->
-            <button class="favorite-btn mobile-favorite-btn" id="mobileFavoriteBtn" title="Add to favorites" aria-label="Add to favorites">
+            <button class="favorite-btn" id="mobileFavoriteBtn" title="Add to favorites" aria-label="Add to favorites">
                 <span class="material-symbols-outlined">favorite_border</span>
             </button>
             <div class="suggestions-container" id="suggestionsContainer"></div>
@@ -86,9 +80,9 @@
                     <span class="material-symbols-outlined">
                         location_on
                     </span>
-                    <h4 class="country-txt">Jakarta</h4>
+                    <h4 class="country-txt">Rourkela</h4>
                 </div>
-                <h5 class="current-date-txt regular-txt">Wed, 07 aug</h5>
+                <h5 class="current-date-txt regular-txt">Loading...</h5>
             </div>
             
             <!-- Favorites Section -->
@@ -107,8 +101,8 @@
                     <div class="weather-image-temp-container">
                         <img src="assets/weather/clouds.svg" class="weather-summary-img">
                         <div class="weather-summary-info">
-                            <h1 class="temp-txt">29 °C</h1>
-                            <h3 class="condition-txt regular-txt">Clouds</h3>
+                            <h1 class="temp-txt">-- °C</h1>
+                            <h3 class="condition-txt regular-txt">Loading...</h3>
                         </div>
                     </div>
                 </div>
@@ -191,7 +185,7 @@
             </div>
 
             <!-- Hourly Forecast Section -->
-            <div class="forecast-section-header">
+            <div class="hourly-forecast-header">
                 <h3 class="section-title">Hourly Forecast</h3>
             </div>
             <div class="forecasts-vertical-container">
@@ -199,54 +193,46 @@
                     <h5 class="forecast-item-date regular-txt">08 aug</h5>
                     <img src="assets/weather/clear.svg" class="forecast-item-img">
                     <h5 class="forecast-item-temp">32 °C</h5>
-                    <h6 class="precipitation-prob">20%</h6>
                 </div>
                 <div class="forecast-vertical-item">
                     <h5 class="forecast-item-date regular-txt">09 aug</h5>
                     <img src="assets/weather/clouds.svg" class="forecast-item-img">
                     <h5 class="forecast-item-temp">27 °C</h5>
-                    <h6 class="precipitation-prob">15%</h6>
                 </div>
                 <div class="forecast-vertical-item">
                     <h5 class="forecast-item-date regular-txt">10 aug</h5>
                     <img src="assets/weather/rain.svg" class="forecast-item-img">
                     <h5 class="forecast-item-temp">25 °C</h5>
-                    <h6 class="precipitation-prob">85%</h6>
                 </div>
                 <div class="forecast-vertical-item">
                     <h5 class="forecast-item-date regular-txt">11 aug</h5>
                     <img src="assets/weather/drizzle.svg" class="forecast-item-img">
                     <h5 class="forecast-item-temp">26 °C</h5>
-                    <h6 class="precipitation-prob">60%</h6>
                 </div>
                 <div class="forecast-vertical-item">
                     <h5 class="forecast-item-date regular-txt">12 aug</h5>
                     <img src="assets/weather/clear.svg" class="forecast-item-img">
                     <h5 class="forecast-item-temp">31 °C</h5>
-                    <h6 class="precipitation-prob">5%</h6>
                 </div>
                 <div class="forecast-vertical-item">
                     <h5 class="forecast-item-date regular-txt">13 aug</h5>
                     <img src="assets/weather/clouds.svg" class="forecast-item-img">
                     <h5 class="forecast-item-temp">28 °C</h5>
-                    <h6 class="precipitation-prob">25%</h6>
                 </div>
                 <div class="forecast-vertical-item">
                     <h5 class="forecast-item-date regular-txt">14 aug</h5>
                     <img src="assets/weather/thunderstorm.svg" class="forecast-item-img">
                     <h5 class="forecast-item-temp">24 °C</h5>
-                    <h6 class="precipitation-prob">90%</h6>
                 </div>
                 <div class="forecast-vertical-item">
                     <h5 class="forecast-item-date regular-txt">12pm</h5>
                     <img src="assets/weather/clear.svg" class="forecast-item-img">
                     <h5 class="forecast-item-temp">32 °C</h5>
-                    <h6 class="precipitation-prob">10%</h6>
                 </div>
             </div>
 
             <!-- 7 Days Forecast Section -->
-            <div class="forecast-section-header">
+            <div class="weekly-forecast-header">
                 <h3 class="section-title">7-Days Forecast</h3>
             </div>
             <div class="forecasts-item-container">
