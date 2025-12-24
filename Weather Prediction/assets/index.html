@@ -29,6 +29,14 @@
     </div>
 
     <main class="main-container">
+        <!-- Alert Icon with Badge -->
+        <div class="alert-icon-container">
+            <button class="alert-icon-btn" id="alertIconBtn" title="View alerts" aria-label="View alerts">
+                <span class="material-symbols-outlined">notifications</span>
+                <div class="alert-badge" id="alertBadge">0</div>
+            </button>
+        </div>
+        
         <div class="top-right-controls">
             <button class="favorite-btn" id="favoriteBtn" title="Add to favorites" aria-label="Add to favorites">
                 <span class="material-symbols-outlined">favorite_border</span>
@@ -181,6 +189,24 @@
                             <h5 class="wind-speed-value-txt">2 M/s</h5>
                         </div>
                     </div>
+                    <div class="condition-item">
+                        <span class="material-symbols-outlined">
+                            masks
+                        </span>
+                        <div class="condition-info">
+                            <h5 class="regular-txt">Air Quality</h5>
+                            <h5 class="air-quality-value-txt">Good</h5>
+                        </div>
+                    </div>
+                    <div class="condition-item">
+                        <span class="material-symbols-outlined">
+                            compress
+                        </span>
+                        <div class="condition-info">
+                            <h5 class="regular-txt">Dew Point</h5>
+                            <h5 class="dew-point-value-txt">15°C</h5>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -319,6 +345,26 @@
             </div>
         </section>
         
+        <!-- Alerts Panel -->
+        <div class="alerts-panel" id="alertsPanel">
+            <div class="alerts-header">
+                <h3 class="alerts-title">Temperature Alerts</h3>
+                <button class="alerts-close" id="alertsClose" title="Close alerts">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <div class="alerts-content" id="alertsContent">
+                <!-- Alerts will be dynamically added here -->
+            </div>
+            <div class="alerts-empty" id="alertsEmpty">
+                <span class="material-symbols-outlined">notifications_off</span>
+                <p>No active alerts</p>
+            </div>
+        </div>
+        
+        <!-- Alert Panel Overlay -->
+        <div class="alert-panel-overlay" id="alertPanelOverlay"></div>
+
         <!-- Popup Message -->
         <div class="popup-overlay" id="popupOverlay">
             <div class="popup-content">

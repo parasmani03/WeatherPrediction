@@ -373,6 +373,34 @@ function updateSelectedSuggestion() {
     })
 }
 
+// Function to update background based on weather condition
+function updateBackground(conditionText) {
+    const body = document.body;
+    const condition = conditionText.toLowerCase();
+    
+    // Reset any existing background classes
+    body.className = '';
+    
+    if (condition.includes('sunny') || condition.includes('clear')) {
+        body.classList.add('clear-sky-bg');
+    } else if (condition.includes('partly cloudy') || condition.includes('few clouds')) {
+        body.classList.add('few-clouds-bg');
+    } else if (condition.includes('cloudy') || condition.includes('overcast')) {
+        body.classList.add('cloudy-bg');
+    } else if (condition.includes('rain') || condition.includes('drizzle') || condition.includes('shower')) {
+        body.classList.add('rain-bg');
+    } else if (condition.includes('thunder') || condition.includes('storm')) {
+        body.classList.add('thunderstorm-bg');
+    } else if (condition.includes('snow') || condition.includes('sleet') || condition.includes('blizzard')) {
+        body.classList.add('snow-bg');
+    } else if (condition.includes('mist') || condition.includes('fog') || condition.includes('haze')) {
+        body.classList.add('mist-bg');
+    } else {
+        // Default background
+        body.classList.add('default-bg');
+    }
+}
+
 // Function to get weather icon based on WeatherAPI condition text
 function getWeatherIcon(conditionText) {
     const condition = conditionText.toLowerCase()
@@ -541,6 +569,9 @@ async function updateWeatherInfo(city) {
         const visibility = currentWeatherData.visibility;
         const conditionText = currentWeatherData.weather[0].description;
         const windSpeed = currentWeatherData.wind.speed;
+        
+        // Update background based on weather condition
+        updateBackground(conditionText);
         const uvIndex = currentWeatherData.uvi || Math.floor(Math.random() * 11); // Fallback if not available
         const sunrise = currentWeatherData.sys.sunrise;
         const sunset = currentWeatherData.sys.sunset;
@@ -599,6 +630,11 @@ async function updateWeatherInfo(city) {
         window.__lastForecastData = forecastData;
         updateForecastsInfo(forecastData);
         updateVerticalForecastInfo(forecastData);
+        
+        // Check temperature alerts
+        if (window.checkTemperatureAlerts) {
+            window.checkTemperatureAlerts(temp, forecastData);
+        }
         if (weatherInfoSection) {
             weatherInfoSection.classList.remove('loading')
             // trigger container transition
@@ -1328,6 +1364,12 @@ if (locateBtn) {
 
                 updateForecastsInfo(forecastData)
                 updateVerticalForecastInfo(forecastData)
+                
+                // Check temperature alerts
+                if (window.checkTemperatureAlerts) {
+                    window.checkTemperatureAlerts(temp, forecastData);
+                }
+                
                 showDisplaySection(weatherInfoSection)
             } catch (e) {
                 alert(`Error getting weather data: ${e.message}`)
@@ -1531,4 +1573,364 @@ if (mobileFavoriteBtn) {
 // Initialize favorites when page loads
 document.addEventListener('DOMContentLoaded', () => {
     initFavorites();
+    initAlertsSystem();
 });
+
+// ==================== ALERT SYSTEM ====================
+
+// Alert system variables
+let alerts = JSON.parse(localStorage.getItem('weatherAlerts')) || [];
+let lastCheckedTemp = null;
+let lastCheckedTime = null;
+
+// Alert types and thresholds
+const ALERT_TYPES = {
+    EXTREME_COLD: {
+        threshold: 5,
+        icon: 'ac_unit',
+        title: 'Extreme Cold Warning',
+        getMessage: (temp) => `Temperature is extremely cold at ${temp}°C. Dress warmly and avoid prolonged outdoor exposure.`,
+        color: 'extreme-cold'
+    },
+    COLD: {
+        threshold: 15,
+        icon: 'thermostat',
+        title: 'Cold Weather Alert',
+        getMessage: (temp) => `Temperature is cold at ${temp}°C. Consider wearing warmer clothing.`,
+        color: 'cold'
+    },
+    HOT: {
+        threshold: 32,
+        icon: 'wb_sunny',
+        title: 'Hot Weather Alert',
+        getMessage: (temp) => `Temperature is hot at ${temp}°C. Stay hydrated and seek shade when possible.`,
+        color: 'hot'
+    },
+    EXTREME_HOT: {
+        threshold: 38,
+        icon: 'local_fire_department',
+        title: 'Extreme Heat Warning',
+        getMessage: (temp) => `Temperature is extremely hot at ${temp}°C. Avoid outdoor activities and stay in air-conditioned areas.`,
+        color: 'extreme-hot'
+    },
+    SIGNIFICANT_CHANGE: {
+        threshold: 5,
+        icon: 'trending_up',
+        title: 'Significant Temperature Change',
+        getMessage: (temp, change) => `Temperature will change by ${change}°C in the next hour. Current: ${temp}°C`,
+        color: 'temperature-change'
+    }
+};
+
+// Initialize alert system
+function initAlertsSystem() {
+    // Get DOM elements
+    const alertIconBtn = document.getElementById('alertIconBtn');
+    const alertBadge = document.getElementById('alertBadge');
+    const alertsPanel = document.getElementById('alertsPanel');
+    const alertsClose = document.getElementById('alertsClose');
+    const alertPanelOverlay = document.getElementById('alertPanelOverlay');
+    
+    // Event listeners
+    if (alertIconBtn) {
+        alertIconBtn.addEventListener('click', toggleAlertsPanel);
+    }
+    
+    if (alertsClose) {
+        alertsClose.addEventListener('click', hideAlertsPanel);
+    }
+    
+    if (alertPanelOverlay) {
+        alertPanelOverlay.addEventListener('click', hideAlertsPanel);
+    }
+    
+    // Initialize alert display
+    updateAlertBadge();
+    renderAlerts();
+    
+    // Clean up old alerts
+    cleanupOldAlerts();
+    
+    // Start hourly temperature monitoring
+    startTemperatureMonitoring();
+}
+
+// Toggle alerts panel
+function toggleAlertsPanel() {
+    const alertsPanel = document.getElementById('alertsPanel');
+    const alertPanelOverlay = document.getElementById('alertPanelOverlay');
+    
+    if (alertsPanel.classList.contains('show')) {
+        hideAlertsPanel();
+    } else {
+        showAlertsPanel();
+    }
+}
+
+// Show alerts panel
+function showAlertsPanel() {
+    const alertsPanel = document.getElementById('alertsPanel');
+    const alertPanelOverlay = document.getElementById('alertPanelOverlay');
+    
+    alertsPanel.classList.add('show');
+    alertPanelOverlay.classList.add('show');
+    document.body.style.overflow = 'hidden';
+}
+
+// Hide alerts panel
+function hideAlertsPanel() {
+    const alertsPanel = document.getElementById('alertsPanel');
+    const alertPanelOverlay = document.getElementById('alertPanelOverlay');
+    
+    alertsPanel.classList.remove('show');
+    alertPanelOverlay.classList.remove('show');
+    document.body.style.overflow = '';
+}
+
+// Update alert badge
+function updateAlertBadge() {
+    const alertBadge = document.getElementById('alertBadge');
+    const alertIconBtn = document.getElementById('alertIconBtn');
+    
+    const activeAlerts = alerts.filter(alert => !alert.dismissed);
+    
+    if (alertBadge) {
+        if (activeAlerts.length > 0) {
+            alertBadge.textContent = activeAlerts.length;
+            alertBadge.classList.add('show');
+        } else {
+            alertBadge.classList.remove('show');
+        }
+    }
+    
+    if (alertIconBtn) {
+        if (activeAlerts.length > 0) {
+            alertIconBtn.classList.add('has-alerts');
+        } else {
+            alertIconBtn.classList.remove('has-alerts');
+        }
+    }
+}
+
+// Render alerts in panel
+function renderAlerts() {
+    const alertsContent = document.getElementById('alertsContent');
+    const alertsEmpty = document.getElementById('alertsEmpty');
+    
+    if (!alertsContent || !alertsEmpty) return;
+    
+    const activeAlerts = alerts.filter(alert => !alert.dismissed);
+    
+    if (activeAlerts.length === 0) {
+        alertsContent.style.display = 'none';
+        alertsEmpty.style.display = 'flex';
+        return;
+    }
+    
+    alertsContent.style.display = 'block';
+    alertsEmpty.style.display = 'none';
+    
+    // Sort alerts by timestamp (newest first)
+    const sortedAlerts = activeAlerts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    
+    alertsContent.innerHTML = '';
+    
+    sortedAlerts.forEach(alert => {
+        const alertElement = createAlertElement(alert);
+        alertsContent.appendChild(alertElement);
+    });
+}
+
+// Create alert element
+function createAlertElement(alert) {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert-item ${alert.color}`;
+    
+    const timestamp = new Date(alert.timestamp).toLocaleString();
+    
+    alertDiv.innerHTML = `
+        <div class="alert-header">
+            <span class="material-symbols-outlined alert-type-icon">${alert.icon}</span>
+            <h4 class="alert-title">${alert.title}</h4>
+        </div>
+        <p class="alert-message">${alert.message}</p>
+        <p class="alert-timestamp">${timestamp}</p>
+    `;
+    
+    // Add click to dismiss functionality
+    alertDiv.addEventListener('click', () => {
+        dismissAlert(alert.id);
+    });
+    
+    return alertDiv;
+}
+
+// Create new alert
+function createAlert(type, temp, change = null) {
+    const alert = {
+        id: Date.now() + Math.random(),
+        type: type,
+        title: ALERT_TYPES[type].title,
+        message: change ? ALERT_TYPES[type].getMessage(temp, change) : ALERT_TYPES[type].getMessage(temp),
+        icon: ALERT_TYPES[type].icon,
+        color: ALERT_TYPES[type].color,
+        timestamp: new Date().toISOString(),
+        dismissed: false
+    };
+    
+    alerts.push(alert);
+    saveAlerts();
+    
+    // Show notification
+    showAlertNotification(alert);
+    
+    // Update UI
+    updateAlertBadge();
+    renderAlerts();
+}
+
+// Dismiss alert
+function dismissAlert(alertId) {
+    const alert = alerts.find(a => a.id === alertId);
+    if (alert) {
+        alert.dismissed = true;
+        saveAlerts();
+        updateAlertBadge();
+        renderAlerts();
+    }
+}
+
+// Show alert notification
+function showAlertNotification(alert) {
+    showNotification(`${alert.title}: ${alert.message}`, 'info');
+}
+
+// Save alerts to localStorage
+function saveAlerts() {
+    localStorage.setItem('weatherAlerts', JSON.stringify(alerts));
+}
+
+// Clean up old alerts (older than 24 hours)
+function cleanupOldAlerts() {
+    const now = new Date();
+    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    
+    alerts = alerts.filter(alert => {
+        const alertTime = new Date(alert.timestamp);
+        return alertTime > oneDayAgo;
+    });
+    
+    // Keep only last 10 alerts
+    alerts = alerts.slice(-10);
+    
+    saveAlerts();
+    updateAlertBadge();
+    renderAlerts();
+}
+
+// Check temperature alerts
+function checkTemperatureAlerts(currentTemp, forecastData) {
+    if (!currentTemp || !forecastData || !forecastData.list) return;
+    
+    // Check current temperature alerts
+    checkCurrentTemperatureAlerts(currentTemp);
+    
+    // Check for significant temperature changes
+    checkTemperatureChanges(currentTemp, forecastData);
+    
+    // Update last checked values
+    lastCheckedTemp = currentTemp;
+    lastCheckedTime = new Date();
+}
+
+// Check current temperature alerts
+function checkCurrentTemperatureAlerts(temp) {
+    const tempFloat = parseFloat(temp);
+    
+    // Check for extreme cold
+    if (tempFloat < ALERT_TYPES.EXTREME_COLD.threshold) {
+        if (!hasActiveAlert('EXTREME_COLD', tempFloat)) {
+            createAlert('EXTREME_COLD', tempFloat);
+        }
+    }
+    // Check for cold
+    else if (tempFloat < ALERT_TYPES.COLD.threshold) {
+        if (!hasActiveAlert('COLD', tempFloat)) {
+            createAlert('COLD', tempFloat);
+        }
+    }
+    // Check for extreme hot
+    else if (tempFloat > ALERT_TYPES.EXTREME_HOT.threshold) {
+        if (!hasActiveAlert('EXTREME_HOT', tempFloat)) {
+            createAlert('EXTREME_HOT', tempFloat);
+        }
+    }
+    // Check for hot
+    else if (tempFloat > ALERT_TYPES.HOT.threshold) {
+        if (!hasActiveAlert('HOT', tempFloat)) {
+            createAlert('HOT', tempFloat);
+        }
+    }
+}
+
+// Check for significant temperature changes
+function checkTemperatureChanges(currentTemp, forecastData) {
+    const currentTempFloat = parseFloat(currentTemp);
+    
+    // Get next hour's forecast
+    const now = new Date();
+    const nextHour = new Date(now.getTime() + 60 * 60 * 1000);
+    
+    // Find forecast for next hour
+    let nextHourForecast = null;
+    for (const forecast of forecastData.list) {
+        const forecastTime = new Date(forecast.dt * 1000);
+        if (forecastTime >= nextHour) {
+            nextHourForecast = forecast;
+            break;
+        }
+    }
+    
+    if (nextHourForecast) {
+        const nextTemp = nextHourForecast.main.temp;
+        const tempChange = Math.abs(nextTemp - currentTempFloat);
+        
+        if (tempChange >= ALERT_TYPES.SIGNIFICANT_CHANGE.threshold) {
+            if (!hasActiveAlert('SIGNIFICANT_CHANGE', currentTempFloat, tempChange)) {
+                createAlert('SIGNIFICANT_CHANGE', currentTempFloat, tempChange);
+            }
+        }
+    }
+}
+
+// Check if alert already exists
+function hasActiveAlert(type, temp, change = null) {
+    const now = new Date();
+    const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+    
+    return alerts.some(alert => 
+        alert.type === type &&
+        !alert.dismissed &&
+        new Date(alert.timestamp) > oneHourAgo &&
+        Math.abs(parseFloat(alert.message.match(/\d+/)?.[0] || 0) - temp) < 2
+    );
+}
+
+// Start temperature monitoring (check every hour)
+function startTemperatureMonitoring() {
+    // Check immediately
+    if (lastCheckedTemp !== null) {
+        // This will be called when weather data is updated
+    }
+    
+    // Set up hourly checking
+    setInterval(() => {
+        // This will trigger when weather data is fetched
+        if (lastCheckedTemp !== null) {
+            cleanupOldAlerts();
+        }
+    }, 60 * 60 * 1000); // Check every hour
+}
+
+// Export function to be called when weather data is updated
+window.checkTemperatureAlerts = checkTemperatureAlerts;
