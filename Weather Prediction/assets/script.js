@@ -680,7 +680,7 @@ async function updateForecastsInfo(forecastData) {
     // Generate 7 days of forecast (including extended prediction for days 6-7)
     const forecastDays = [];
     
-    // Add available forecast days (usually 5 days) - starting from tomorrow
+    // Add available forecast days (up to 5 days from API) - starting from tomorrow
     for (let i = 0; i < availableDates.length && i < 5; i++) {
         const date = availableDates[i];
         const dayData = grouped[date];
@@ -709,24 +709,37 @@ async function updateForecastsInfo(forecastData) {
         });
     }
     
-    // If we have less than 7 days, extend with predicted data for days 6-7
-    if (forecastDays.length < 7) {
-        const lastAvailableDay = forecastDays[forecastDays.length - 1];
-        const remainingDays = 7 - forecastDays.length;
-        
-        for (let i = 1; i <= remainingDays; i++) {
+    // Always extend to 7 days with predicted data if needed
+    const targetDays = 7;
+    const lastAvailableDay = forecastDays[forecastDays.length - 1];
+    
+    // If we have exactly 5 days, add 2 more days
+    // If we have less than 5 days (which shouldn't happen with the API), add more days
+    const daysToAdd = targetDays - forecastDays.length;
+    
+    if (daysToAdd > 0) {
+        for (let i = 1; i <= daysToAdd; i++) {
             // Calculate the date for the extended forecast
             const extendedDate = new Date(lastAvailableDay.date);
             extendedDate.setDate(extendedDate.getDate() + i);
             const extendedDateStr = extendedDate.toISOString().split('T')[0];
             
             // Use the last available day's data with slight variations for extended forecast
-            const tempVariation = Math.random() * 4 - 2; // ±2°C variation
+            const tempVariation = Math.random() * 2 - 1; // ±1°C variation for more realistic data
+            const conditionVariation = Math.random();
+            let extendedCondition = lastAvailableDay.condition;
+            
+            // Slight chance to change the condition (30% chance)
+            if (conditionVariation > 0.7) {
+                const conditions = ['clear', 'clouds', 'rain', 'drizzle', 'thunderstorm'];
+                extendedCondition = conditions[Math.floor(Math.random() * conditions.length)];
+            }
+            
             forecastDays.push({
                 date: extendedDateStr,
-                minTemp: lastAvailableDay.minTemp + tempVariation,
-                maxTemp: lastAvailableDay.maxTemp + tempVariation,
-                condition: lastAvailableDay.condition,
+                minTemp: Math.max(-10, lastAvailableDay.minTemp + tempVariation - 1), // Slightly cooler min temp
+                maxTemp: Math.min(45, lastAvailableDay.maxTemp + tempVariation + 1), // Slightly warmer max temp
+                condition: extendedCondition,
                 isReal: false // Mark as extended prediction
             });
         }
@@ -762,7 +775,7 @@ async function updateForecastsInfo(forecastData) {
 
     // Add click event listeners to forecast items
     const forecastItems = forecastsItemContainer.querySelectorAll('.forecast-item');
-    forecastItems.forEach(item => {
+    forecastItems.forEach((item, index) => {
         item.addEventListener('click', () => {
             // Check if the clicked item is already selected
             const isCurrentlySelected = item.classList.contains('active-forecast');
@@ -772,13 +785,38 @@ async function updateForecastsInfo(forecastData) {
             
             // If the clicked item was not selected, select it
             if (!isCurrentlySelected) {
-            item.classList.add('active-forecast');
-            
-            // Get the date from the clicked item
-            const selectedDate = item.getAttribute('data-date');
+                item.classList.add('active-forecast');
                 
-                // Update the main weather display for the selected date
-                updateMainWeatherDisplay(forecastData, selectedDate);
+                // Get the date from the clicked item
+                const selectedDate = item.getAttribute('data-date');
+                
+                // Check if this is a real forecast day or an extended prediction
+                const isExtendedPrediction = index >= 5; // Days 0-4 are real, 5-6 are extended
+                
+                if (isExtendedPrediction) {
+                    // For extended predictions, update with the data we have
+                    const dayData = forecastDays[index];
+                    const dateObj = new Date(dayData.date + 'T12:00:00');
+                    const formattedDate = dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+                    
+                    // Update the main weather display with the extended forecast data
+                    tempTxt.textContent = `${Math.round((dayData.maxTemp + dayData.minTemp) / 2)}°C`;
+                    conditionTxt.textContent = dayData.condition.charAt(0).toUpperCase() + dayData.condition.slice(1);
+                    humidityValueTxt.textContent = 'N/A';
+                    windSpeedValueTxt.textContent = 'N/A';
+                    
+                    // Update date display
+                    currentDateTxt.textContent = formattedDate;
+                    
+                    // Update weather icon
+                    weatherSummaryImg.src = `assets/weather/${getWeatherIcon(dayData.condition)}`;
+                    
+                    // Clear hourly forecast for extended predictions
+                    forecastsVerticalContainer.innerHTML = '';
+                } else {
+                    // For real forecast days, use the original update function
+                    updateMainWeatherDisplay(forecastData, selectedDate);
+                }
             
             // Update the hourly forecast and graph for the selected date
             updateVerticalForecastInfo(forecastData, selectedDate);
